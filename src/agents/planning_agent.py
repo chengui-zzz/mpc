@@ -1,81 +1,50 @@
-"""感知Agent - 风险信号采集与实体对齐"""
-import random
-from datetime import datetime
-from typing import Optional
-from ..models import RiskEvent, AlertLevel, AgentRole
+"""规划Agent - 应急方案生成"""
+from ..models import Proposal, RiskEvent, AgentRole
 
 
-class PerceptionAgent:
-    """7x24风险感知Agent"""
+class PlanningAgent:
+    """供应链规划专家Agent"""
     
     def __init__(self):
-        self.name = AgentRole.PERCEPTION
-        self.scanned_events = 0
+        self.name = AgentRole.PLANNING
         
-    def scan(self) -> Optional[RiskEvent]:
-        """
-        扫描外部数据源，发现风险事件
-        实际生产环境接入：新闻API、气象API、港口数据API等
-        """
-        # 30%概率发现风险
-        if random.random() > 0.3:
-            return None
-            
-        self.scanned_events += 1
-        event_id = f"EVT-{self.scanned_events:06d}"
-        
-        scenarios = [
-            {
-                "type": "台风",
-                "supplier": "马尼拉港-供应商A",
-                "skus": ["SKU-8842", "SKU-8843"],
-                "severity": AlertLevel.RED,
-                "source": "国家气象局",
-                "chain": [
-                    "台风海神形成",
-                    "路径预测：72h后抵达马尼拉",
-                    "马尼拉港将关闭48-72h",
-                    "影响SCP航线",
-                    "波及SKU-8842/8843的BOM层级"
-                ]
-            },
-            {
-                "type": "限电",
-                "supplier": "河内工厂-供应商B",
-                "skus": ["SKU-7721"],
-                "severity": AlertLevel.YELLOW,
-                "source": "越南电力公司公告",
-                "chain": [
-                    "越南北部电力短缺",
-                    "河内工业区发布限电通知",
-                    "供应商B工厂产能受限60%",
-                    "影响SKU-7721交付"
-                ]
-            },
-            {
-                "type": "港口拥堵",
-                "supplier": "洛杉矶港-供应商C", 
-                "skus": ["SKU-3390", "SKU-3391"],
-                "severity": AlertLevel.YELLOW,
-                "source": "MarineTraffic AIS数据",
-                "chain": [
-                    "洛杉矶港泊位利用率>90%",
-                    "平均等待时间增加至5天",
-                    "供应商C货物滞留",
-                    "影响SKU-3390/3391到港时间"
-                ]
-            }
-        ]
-        
-        scenario = random.choice(scenarios)
-        return RiskEvent(
-            event_id=event_id,
-            timestamp=datetime.now(),
-            event_type=scenario["type"],
-            affected_supplier=scenario["supplier"],
-            affected_skus=scenario["skus"],
-            duration_hours=random.randint(24, 96),
-            severity=scenario["severity"],
-            source=scenario["source"],
-            reasoning_chain=scenario["chain"]
+        # 备选供应商映射表（实际应接ERP系统）
+        self._alt_suppliers = {
+            "马尼拉港-供应商A": ["巴生港-供应商D", "新加坡港-供应商G"],
+            "河内工厂-供应商B": ["深圳工厂-供应商E", "曼谷工厂-供应商H"],
+            "洛杉矶港-供应商C": ["温哥华港-供应商F", "休斯顿港-供应商I"]
+        }
+    
+    def propose(self, event: RiskEvent) -> Proposal:
+        """基于风险事件，生成应急方案"""
+        alts = self._alt_suppliers.get(
+            event.affected_supplier, 
+            ["备用供应商-X"]
         )
+        
+        primary_alt = alts[0]
+        cost_increase = 15.0 if event.severity.value == "red" else 10.0
+        
+        return Proposal(
+            action="订单紧急转移",
+            supplier_from=event.affected_supplier,
+            supplier_to=primary_alt,
+            cost_increase_pct=cost_increase,
+            lead_time_days=5 if event.severity.value == "red" else 3,
+            description=f"因{event.event_type}事件，将{event.affected_supplier}订单转移至{primary_alt}",
+            alternatives=alts[1:]  # 备选方案
+        )
+    
+    def adjust(self, original: Proposal, feedback: str) -> Proposal:
+        """根据其他Agent反馈调整方案"""
+        # 增加缓冲成本和时间
+        adjusted = Proposal(
+            action=original.action,
+            supplier_from=original.supplier_from,
+            supplier_to=original.alternatives[0] if original.alternatives else original.supplier_to,
+            cost_increase_pct=original.cost_increase_pct + 5.0,
+            lead_time_days=original.lead_time_days + 2,
+            description=f"{original.description}（调整后方案：{feedback}）",
+            alternatives=original.alternatives[1:]
+        )
+        return adjusted
